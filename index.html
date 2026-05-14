@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenClaude — 多提供商开源编程智能体 CLI</title>
+<meta name="description" content="OpenClaude 是一个面向云端和本地模型提供商的开源编程智能体 CLI 工具，支持 OpenAI、Gemini、GitHub Models、Codex、Ollama 等。" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['"Inter"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', '"Fira Code"', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          brand: {
+            50:  '#eef6ff',
+            100: '#d9eaff',
+            200: '#b6d4ff',
+            300: '#86b6ff',
+            400: '#5690ff',
+            500: '#2f6bff',
+            600: '#1f4cea',
+            700: '#1b3cc2',
+            800: '#1c349a',
+            900: '#1c3079',
+          },
+        },
+        animation: {
+          'fade-in-up': 'fadeInUp 0.8s ease-out both',
+          'gradient': 'gradient 8s ease infinite',
+        },
+        keyframes: {
+          fadeInUp: {
+            '0%': { opacity: '0', transform: 'translateY(20px)' },
+            '100%': { opacity: '1', transform: 'translateY(0)' },
+          },
+          gradient: {
+            '0%, 100%': { 'background-position': '0% 50%' },
+            '50%': { 'background-position': '100% 50%' },
+          },
+        },
+      },
+    },
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  html { scroll-behavior: smooth; }
+  body {
+    background: #fafafa;
+    color: #0a0a0a;
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, #2f6bff 0%, #7c3aed 50%, #ec4899 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    background-size: 200% 200%;
+    animation: gradient 8s ease infinite;
+  }
+  .gradient-bg {
+    background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(47,107,255,0.25), transparent),
+                radial-gradient(ellipse 50% 40% at 80% 50%, rgba(236,72,153,0.15), transparent),
+                radial-gradient(ellipse 50% 40% at 20% 80%, rgba(124,58,237,0.15), transparent);
+  }
+  .grid-pattern {
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 40%, transparent 100%);
+  }
+  .code-window {
+    background: #0d1117;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 25px 80px -20px rgba(31,76,234,0.35), 0 10px 40px -15px rgba(0,0,0,0.4);
+  }
+  .code-window pre {
+    color: #e6edf3;
+    font-size: 0.875rem;
+    line-height: 1.7;
+  }
+  .code-window .tok-cmt { color: #8b949e; }
+  .code-window .tok-key { color: #ff7b72; }
+  .code-window .tok-str { color: #a5d6ff; }
+  .code-window .tok-fn  { color: #d2a8ff; }
+  .code-window .tok-var { color: #ffa657; }
+  .feature-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .feature-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(47,107,255,0.4);
+    box-shadow: 0 20px 50px -15px rgba(47,107,255,0.2);
+  }
+  .provider-row:hover {
+    background: linear-gradient(90deg, rgba(47,107,255,0.04), transparent);
+  }
+  .copy-btn {
+    transition: all 0.2s ease;
+  }
+  .copy-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  .copy-btn.copied { color: #34d399; }
+  .nav-blur {
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: rgba(255,255,255,0.75);
+  }
+  .glass-card {
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0,0,0,0.05);
+  }
+  /* observer animations */
+  .reveal { opacity: 0; transform: translateY(24px); transition: all 0.7s cubic-bezier(0.4,0,0.2,1); }
+  .reveal.in { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body class="font-sans antialiased">
+
+<!-- ========== NAV ========== -->
+<header class="sticky top-0 z-50 nav-blur border-b border-black/5">
+  <nav class="max-w-7xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
+    <a href="#top" class="flex items-center gap-2.5 group">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-brand-500/30 group-hover:scale-105 transition-transform">
+        <span class="text-white font-bold text-lg">⌘</span>
+      </div>
+      <span class="font-bold text-lg tracking-tight">OpenClaude</span>
+    </a>
+    <div class="hidden md:flex items-center gap-8 text-sm font-medium text-neutral-600">
+      <a href="#features" class="hover:text-neutral-900 transition">功能特性</a>
+      <a href="#providers" class="hover:text-neutral-900 transition">提供商</a>
+      <a href="#quickstart" class="hover:text-neutral-900 transition">快速开始</a>
+      <a href="#grpc" class="hover:text-neutral-900 transition">gRPC</a>
+      <a href="#community" class="hover:text-neutral-900 transition">社区</a>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="https://github.com/Gitlawb/openclaude" target="_blank" rel="noopener" class="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900 transition">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.27-1.69-1.27-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.96 10.96 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.68.8.56C20.71 21.39 24 17.08 24 12c0-6.35-5.15-11.5-11.5-11.5z"/></svg>
+        GitHub
+      </a>
+      <a href="#quickstart" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-900 text-white text-sm font-semibold hover:bg-neutral-800 transition shadow-sm">
+        立即开始
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </nav>
+</header>
+
+<!-- ========== HERO ========== -->
+<section id="top" class="relative overflow-hidden">
+  <div class="absolute inset-0 gradient-bg"></div>
+  <div class="absolute inset-0 grid-pattern"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 lg:px-8 pt-20 pb-24 lg:pt-28 lg:pb-32">
+    <div class="max-w-4xl mx-auto text-center">
+      <!-- Badge -->
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur border border-black/5 text-xs font-medium text-neutral-700 mb-8 animate-fade-in-up shadow-sm">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
+        </span>
+        开源 · MIT License · 多提供商支持
+      </div>
+
+      <!-- Headline -->
+      <h1 class="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] animate-fade-in-up" style="animation-delay:.05s">
+        一个 CLI，
+        <br class="hidden sm:block" />
+        驱动<span class="gradient-text">所有模型</span>
+      </h1>
+
+      <p class="mt-7 text-lg sm:text-xl text-neutral-600 leading-relaxed max-w-2xl mx-auto animate-fade-in-up" style="animation-delay:.15s">
+        OpenClaude 是面向云端与本地模型的开源编程智能体 CLI。<br class="hidden sm:block" />
+        支持 OpenAI、Gemini、GitHub Models、Codex、Ollama 等，统一终端工作流。
+      </p>
+
+      <!-- CTAs -->
+      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 animate-fade-in-up" style="animation-delay:.25s">
+        <a href="#quickstart" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-neutral-900 text-white font-semibold hover:bg-neutral-800 transition shadow-lg shadow-neutral-900/20 hover:shadow-xl hover:shadow-neutral-900/30">
+          快速开始
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M5 12h13"/></svg>
+        </a>
+        <a href="https://github.com/Gitlawb/openclaude" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white border border-neutral-200 text-neutral-800 font-semibold hover:bg-neutral-50 hover:border-neutral-300 transition shadow-sm">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.27-1.69-1.27-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.96 10.96 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.68.8.56C20.71 21.39 24 17.08 24 12c0-6.35-5.15-11.5-11.5-11.5z"/></svg>
+          在 GitHub 上查看
+        </a>
+      </div>
+
+      <!-- Quick install -->
+      <div class="mt-10 max-w-xl mx-auto animate-fade-in-up" style="animation-delay:.35s">
+        <div class="relative group">
+          <div class="absolute -inset-0.5 bg-gradient-to-r from-brand-500 via-purple-500 to-pink-500 rounded-xl opacity-30 blur group-hover:opacity-60 transition"></div>
+          <div class="relative flex items-center gap-3 bg-neutral-950 rounded-xl p-4 pl-5">
+            <span class="text-pink-400 font-mono text-sm select-none">$</span>
+            <code class="flex-1 font-mono text-sm text-neutral-100 text-left">npm install -g @gitlawb/openclaude</code>
+            <button onclick="copyText(this, 'npm install -g @gitlawb/openclaude')" class="copy-btn px-2.5 py-1.5 rounded-md text-xs text-neutral-400 hover:text-white">
+              <span class="copy-label">复制</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hero terminal preview -->
+    <div class="mt-20 max-w-5xl mx-auto animate-fade-in-up" style="animation-delay:.45s">
+      <div class="code-window rounded-2xl overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5">
+          <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+          <span class="ml-3 text-xs font-mono text-neutral-500">openclaude — bash</span>
+        </div>
+        <pre class="p-6 overflow-x-auto"><code><span class="tok-cmt"># 配置 OpenAI 兼容提供商</span>
+<span class="tok-key">export</span> <span class="tok-var">CLAUDE_CODE_USE_OPENAI</span>=<span class="tok-str">1</span>
+<span class="tok-key">export</span> <span class="tok-var">OPENAI_API_KEY</span>=<span class="tok-str">sk-your-key-here</span>
+<span class="tok-key">export</span> <span class="tok-var">OPENAI_MODEL</span>=<span class="tok-str">gpt-4o</span>
+
+<span class="tok-cmt"># 启动智能体</span>
+<span class="tok-fn">openclaude</span>
+
+<span class="tok-cmt"># 在应用内：</span>
+<span class="tok-cmt">#  /provider          引导式提供商配置</span>
+<span class="tok-cmt">#  /onboard-github    GitHub Models 入门引导</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== WHY ========== -->
+<section id="features" class="py-24 lg:py-32 bg-white">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto text-center reveal">
+      <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">为什么选择 OpenClaude</span>
+      <h2 class="mt-3 text-4xl sm:text-5xl font-bold tracking-tight">将编程智能体<br/>集中于一处</h2>
+      <p class="mt-5 text-lg text-neutral-600">在云端 API 与本地模型之间无缝切换，保持统一的工作流和工具集。</p>
+    </div>
+
+    <div class="mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <!-- card -->
+      <div class="feature-card reveal p-7 rounded-2xl bg-white border border-neutral-200/80">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center mb-5 shadow-lg shadow-brand-500/30">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">统一 CLI</h3>
+        <p class="text-neutral-600 text-sm leading-relaxed">使用一个 CLI 跨越云端 API 和本地模型后端，零切换成本。</p>
+      </div>
+
+      <div class="feature-card reveal p-7 rounded-2xl bg-white border border-neutral-200/80">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center mb-5 shadow-lg shadow-purple-500/30">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">引导式配置</h3>
+        <p class="text-neutral-600 text-sm leading-relaxed">通过 <code class="text-xs font-mono px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 在应用内保存提供商配置。</p>
+      </div>
+
+      <div class="feature-card reveal p-7 rounded-2xl bg-white border border-neutral-200/80">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center mb-5 shadow-lg shadow-pink-500/30">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">流式响应</h3>
+        <p class="text-neutral-600 text-sm leading-relaxed">实时 token 输出和工具进度，所见即所得。</p>
+      </div>
+
+      <div class="feature-card reveal p-7 rounded-2xl bg-white border border-neutral-200/80">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-5 shadow-lg shadow-emerald-500/30">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"/></svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">工具驱动</h3>
+        <p class="text-neutral-600 text-sm leading-relaxed">Bash、文件读写、grep、glob、智能体、任务、MCP 与斜杠命令。</p>
+      </div>
+
+      <div class="feature-card reveal p-7 rounded-2xl bg-white border border-neutral-200/80">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mb-5 shadow-lg shadow-amber-500/30">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">图片输入</h3>
+        <p class="text-neutral-600 text-sm leading-relaxed">支持视觉模型的 URL 与 base64 图片输入。</p>
+      </div>
+
+      <div class="feature-card reveal p-7 rounded-2xl bg-white border border-neutral-200/80">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-5 shadow-lg shadow-cyan-500/30">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">VS Code 集成</h3>
+        <p class="text-neutral-600 text-sm leading-relaxed">内置 VS Code 扩展实现启动集成与主题支持。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== PROVIDERS ========== -->
+<section id="providers" class="py-24 lg:py-32 bg-neutral-50/50 relative overflow-hidden">
+  <div class="absolute inset-0 grid-pattern opacity-50"></div>
+  <div class="relative max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto text-center reveal">
+      <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">支持的提供商</span>
+      <h2 class="mt-3 text-4xl sm:text-5xl font-bold tracking-tight">10+ 模型提供商<br/>开箱即用</h2>
+      <p class="mt-5 text-lg text-neutral-600">从顶级云服务到本地推理，全部统一在同一接口下。</p>
+    </div>
+
+    <div class="mt-16 reveal">
+      <div class="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        <table class="w-full text-sm">
+          <thead class="bg-neutral-50 border-b border-neutral-200">
+            <tr class="text-left">
+              <th class="px-6 py-4 font-semibold text-neutral-700">提供商</th>
+              <th class="px-6 py-4 font-semibold text-neutral-700 hidden md:table-cell">设置方式</th>
+              <th class="px-6 py-4 font-semibold text-neutral-700">备注</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-neutral-100">
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>OpenAI 兼容</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 或环境变量</td>
+              <td class="px-6 py-4 text-neutral-600">OpenAI、OpenRouter、DeepSeek、Groq、Mistral、LM Studio 及兼容 <code class="font-mono text-xs">/v1</code> 服务器</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-blue-500"></span>Hicap</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 或环境变量</td>
+              <td class="px-6 py-4 text-neutral-600"><code class="font-mono text-xs">api-key</code> 认证；从 <code class="font-mono text-xs">/models</code> 发现模型；支持 Responses 模式</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-purple-500"></span>Gemini</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 或环境变量</td>
+              <td class="px-6 py-4 text-neutral-600">仅支持 API key</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-neutral-700"></span>GitHub Models</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/onboard-github</code></td>
+              <td class="px-6 py-4 text-neutral-600">交互式引导并保存凭据</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Codex OAuth</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code></td>
+              <td class="px-6 py-4 text-neutral-600">浏览器登录 ChatGPT 并安全存储 Codex 凭据</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Codex</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code></td>
+              <td class="px-6 py-4 text-neutral-600">使用 Codex CLI 认证、安全存储或环境变量凭据</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-500"></span>小米 MiMo</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 或环境变量</td>
+              <td class="px-6 py-4 text-neutral-600">OpenAI 兼容；<code class="font-mono text-xs">api.xiaomimimo.com/v1</code>；默认 <code class="font-mono text-xs">mimo-v2.5-pro</code></td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-cyan-500"></span>Ollama</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 或环境变量</td>
+              <td class="px-6 py-4 text-neutral-600">本地推理，无需 API key</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-rose-500"></span>Atomic Chat</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell"><code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">bun run dev:atomic-chat</code></td>
+              <td class="px-6 py-4 text-neutral-600">本地模型提供商，自动检测已加载模型</td>
+            </tr>
+            <tr class="provider-row">
+              <td class="px-6 py-4 font-semibold whitespace-nowrap"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-indigo-500"></span>Bedrock / Vertex / Foundry</span></td>
+              <td class="px-6 py-4 text-neutral-600 hidden md:table-cell">环境变量</td>
+              <td class="px-6 py-4 text-neutral-600">支持环境下的额外提供商集成</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== QUICKSTART ========== -->
+<section id="quickstart" class="py-24 lg:py-32 bg-white">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto text-center reveal">
+      <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">快速开始</span>
+      <h2 class="mt-3 text-4xl sm:text-5xl font-bold tracking-tight">三步开始使用</h2>
+      <p class="mt-5 text-lg text-neutral-600">从安装到第一次对话，只需 60 秒。</p>
+    </div>
+
+    <!-- Steps -->
+    <div class="mt-16 grid lg:grid-cols-3 gap-6">
+      <div class="reveal">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm">1</span>
+          <h3 class="font-semibold text-lg">全局安装</h3>
+        </div>
+        <div class="code-window rounded-xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+            <span class="text-xs font-mono text-neutral-500">terminal</span>
+            <button onclick="copyText(this, 'npm install -g @gitlawb/openclaude')" class="copy-btn px-2 py-1 rounded text-xs text-neutral-400">
+              <span class="copy-label">复制</span>
+            </button>
+          </div>
+          <pre class="p-5 text-sm"><code><span class="tok-fn">npm</span> install -g <span class="tok-str">@gitlawb/openclaude</span></code></pre>
+        </div>
+        <p class="mt-3 text-sm text-neutral-600">⚠️ 提示 <code class="font-mono text-xs">ripgrep not found</code> 时，请先安装 ripgrep 并确认 <code class="font-mono text-xs">rg --version</code> 可用。</p>
+      </div>
+
+      <div class="reveal">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">2</span>
+          <h3 class="font-semibold text-lg">配置提供商</h3>
+        </div>
+        <div class="code-window rounded-xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+            <span class="text-xs font-mono text-neutral-500">macOS / Linux</span>
+            <button onclick="copyText(this, 'export CLAUDE_CODE_USE_OPENAI=1\nexport OPENAI_API_KEY=sk-your-key-here\nexport OPENAI_MODEL=gpt-4o')" class="copy-btn px-2 py-1 rounded text-xs text-neutral-400">
+              <span class="copy-label">复制</span>
+            </button>
+          </div>
+          <pre class="p-5 text-sm"><code><span class="tok-key">export</span> <span class="tok-var">CLAUDE_CODE_USE_OPENAI</span>=<span class="tok-str">1</span>
+<span class="tok-key">export</span> <span class="tok-var">OPENAI_API_KEY</span>=<span class="tok-str">sk-your-key</span>
+<span class="tok-key">export</span> <span class="tok-var">OPENAI_MODEL</span>=<span class="tok-str">gpt-4o</span></code></pre>
+        </div>
+        <p class="mt-3 text-sm text-neutral-600">或在应用内运行 <code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">/provider</code> 进行引导式配置。</p>
+      </div>
+
+      <div class="reveal">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-8 h-8 rounded-full bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-sm">3</span>
+          <h3 class="font-semibold text-lg">启动智能体</h3>
+        </div>
+        <div class="code-window rounded-xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+            <span class="text-xs font-mono text-neutral-500">terminal</span>
+            <button onclick="copyText(this, 'openclaude')" class="copy-btn px-2 py-1 rounded text-xs text-neutral-400">
+              <span class="copy-label">复制</span>
+            </button>
+          </div>
+          <pre class="p-5 text-sm"><code><span class="tok-fn">openclaude</span>
+
+<span class="tok-cmt"># 应用内可用：</span>
+<span class="tok-cmt"># /provider</span>
+<span class="tok-cmt"># /onboard-github</span></code></pre>
+        </div>
+        <p class="mt-3 text-sm text-neutral-600">享受流式输出、工具调用与多步骤智能体工作流。</p>
+      </div>
+    </div>
+
+    <!-- Local Ollama setup -->
+    <div class="mt-16 reveal">
+      <div class="rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-800 p-8 lg:p-10 text-white relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-64 h-64 bg-cyan-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4"></div>
+        <div class="relative">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-semibold">本地推理</span>
+            <span class="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold">无需 API Key</span>
+          </div>
+          <h3 class="text-2xl lg:text-3xl font-bold mb-2">最快的本地 Ollama 设置</h3>
+          <p class="text-neutral-300 mb-6 max-w-2xl">在本地机器上运行开源模型，完全私有、零成本。</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-xl bg-black/40 border border-white/5 overflow-hidden">
+              <div class="px-4 py-2.5 border-b border-white/5 text-xs font-mono text-neutral-400">macOS / Linux</div>
+              <pre class="p-4 text-sm overflow-x-auto"><code><span class="tok-key">export</span> <span class="tok-var">CLAUDE_CODE_USE_OPENAI</span>=<span class="tok-str">1</span>
+<span class="tok-key">export</span> <span class="tok-var">OPENAI_BASE_URL</span>=<span class="tok-str">http://localhost:11434/v1</span>
+<span class="tok-key">export</span> <span class="tok-var">OPENAI_MODEL</span>=<span class="tok-str">qwen2.5-coder:7b</span>
+
+<span class="tok-fn">openclaude</span></code></pre>
+            </div>
+            <div class="rounded-xl bg-black/40 border border-white/5 overflow-hidden">
+              <div class="px-4 py-2.5 border-b border-white/5 text-xs font-mono text-neutral-400">Windows PowerShell</div>
+              <pre class="p-4 text-sm overflow-x-auto"><code><span class="tok-var">$env:CLAUDE_CODE_USE_OPENAI</span>=<span class="tok-str">"1"</span>
+<span class="tok-var">$env:OPENAI_BASE_URL</span>=<span class="tok-str">"http://localhost:11434/v1"</span>
+<span class="tok-var">$env:OPENAI_MODEL</span>=<span class="tok-str">"qwen2.5-coder:7b"</span>
+
+<span class="tok-fn">openclaude</span></code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== AGENT ROUTING ========== -->
+<section class="py-24 lg:py-32 bg-neutral-50/50 relative overflow-hidden">
+  <div class="absolute inset-0 grid-pattern opacity-40"></div>
+  <div class="relative max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+      <div class="reveal">
+        <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">智能体路由</span>
+        <h2 class="mt-3 text-4xl sm:text-5xl font-bold tracking-tight">为每个智能体<br/>分配最佳模型</h2>
+        <p class="mt-6 text-lg text-neutral-600 leading-relaxed">通过基于设置的路由将不同的智能体分配到不同的模型。这对成本优化或按模型特长分配工作非常有用。</p>
+
+        <ul class="mt-8 space-y-4">
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center mt-0.5">
+              <svg class="w-3.5 h-3.5 text-brand-700" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            </span>
+            <div>
+              <strong class="text-neutral-900">成本优化</strong>
+              <p class="text-sm text-neutral-600 mt-0.5">将廉价模型用于探索，将昂贵模型用于关键路径</p>
+            </div>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center mt-0.5">
+              <svg class="w-3.5 h-3.5 text-brand-700" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            </span>
+            <div>
+              <strong class="text-neutral-900">按特长分配</strong>
+              <p class="text-sm text-neutral-600 mt-0.5">前端任务用一个模型，规划任务用另一个模型</p>
+            </div>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center mt-0.5">
+              <svg class="w-3.5 h-3.5 text-brand-700" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            </span>
+            <div>
+              <strong class="text-neutral-900">优雅回退</strong>
+              <p class="text-sm text-neutral-600 mt-0.5">未匹配路由时，全局提供商作为回退</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="reveal">
+        <div class="code-window rounded-2xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+              <span class="ml-2 text-xs font-mono text-neutral-500">~/.openclaude.json</span>
+            </div>
+          </div>
+          <pre class="p-6 text-sm overflow-x-auto"><code><span class="tok-cmt">{</span>
+  <span class="tok-str">"agentModels"</span>: {
+    <span class="tok-str">"deepseek-v4-flash"</span>: {
+      <span class="tok-str">"base_url"</span>: <span class="tok-str">"https://api.deepseek.com/v1"</span>,
+      <span class="tok-str">"api_key"</span>: <span class="tok-str">"sk-your-key"</span>
+    },
+    <span class="tok-str">"gpt-4o"</span>: {
+      <span class="tok-str">"base_url"</span>: <span class="tok-str">"https://api.openai.com/v1"</span>,
+      <span class="tok-str">"api_key"</span>: <span class="tok-str">"sk-your-key"</span>
+    }
+  },
+  <span class="tok-str">"agentRouting"</span>: {
+    <span class="tok-str">"Explore"</span>:        <span class="tok-str">"deepseek-v4-flash"</span>,
+    <span class="tok-str">"Plan"</span>:           <span class="tok-str">"gpt-4o"</span>,
+    <span class="tok-str">"general-purpose"</span>: <span class="tok-str">"gpt-4o"</span>,
+    <span class="tok-str">"frontend-dev"</span>:   <span class="tok-str">"deepseek-v4-flash"</span>,
+    <span class="tok-str">"default"</span>:        <span class="tok-str">"gpt-4o"</span>
+  }
+<span class="tok-cmt">}</span></code></pre>
+        </div>
+        <div class="mt-4 flex gap-2.5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <svg class="flex-shrink-0 w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <p class="text-sm text-amber-900"><strong>注意：</strong><code class="font-mono text-xs">api_key</code> 以明文存储于 <code class="font-mono text-xs">settings.json</code>。请保持文件私有，不要提交到版本控制。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== gRPC ========== -->
+<section id="grpc" class="py-24 lg:py-32 bg-white">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto text-center reveal">
+      <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">无头模式</span>
+      <h2 class="mt-3 text-4xl sm:text-5xl font-bold tracking-tight">gRPC 服务器</h2>
+      <p class="mt-5 text-lg text-neutral-600">将智能体能力（工具、bash、文件编辑）集成到任何应用、CI/CD 流水线或自定义 UI 中。</p>
+    </div>
+
+    <div class="mt-16 grid md:grid-cols-2 gap-6 reveal">
+      <div class="p-7 rounded-2xl bg-gradient-to-br from-neutral-50 to-white border border-neutral-200">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-9 h-9 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center font-bold">1</span>
+          <h3 class="font-semibold text-lg">启动 gRPC 服务器</h3>
+        </div>
+        <p class="text-sm text-neutral-600 mb-4">在 <code class="font-mono text-xs px-1.5 py-0.5 bg-neutral-100 rounded">localhost:50051</code> 启动核心引擎作为 gRPC 服务。</p>
+        <div class="code-window rounded-xl overflow-hidden">
+          <pre class="p-4 text-sm"><code><span class="tok-fn">npm</span> run dev:grpc</code></pre>
+        </div>
+        <div class="mt-4 space-y-2 text-sm">
+          <div class="flex justify-between gap-3 py-1.5 border-b border-neutral-100">
+            <code class="font-mono text-xs text-neutral-700">GRPC_PORT</code>
+            <span class="text-neutral-500">默认 <code class="font-mono">50051</code></span>
+          </div>
+          <div class="flex justify-between gap-3 py-1.5">
+            <code class="font-mono text-xs text-neutral-700">GRPC_HOST</code>
+            <span class="text-neutral-500">默认 <code class="font-mono">localhost</code></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-7 rounded-2xl bg-gradient-to-br from-neutral-50 to-white border border-neutral-200">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-9 h-9 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold">2</span>
+          <h3 class="font-semibold text-lg">运行测试 CLI</h3>
+        </div>
+        <p class="text-sm text-neutral-600 mb-4">完全通过 gRPC 通信的轻量级 CLI 客户端，支持颜色渲染与权限确认。</p>
+        <div class="code-window rounded-xl overflow-hidden">
+          <pre class="p-4 text-sm"><code><span class="tok-fn">npm</span> run dev:grpc:cli</code></pre>
+        </div>
+        <p class="mt-4 text-xs text-neutral-500">gRPC 定义位于 <code class="font-mono text-xs px-1 py-0.5 bg-neutral-100 rounded">src/proto/openclaude.proto</code>，可生成 Python、Go、Rust 等客户端。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== WEB SEARCH ========== -->
+<section class="py-24 lg:py-32 bg-neutral-50/50">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="grid lg:grid-cols-3 gap-8 items-start">
+      <div class="lg:col-span-1 reveal">
+        <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">网页能力</span>
+        <h2 class="mt-3 text-3xl lg:text-4xl font-bold tracking-tight">网页搜索<br/>与抓取</h2>
+        <p class="mt-5 text-neutral-600 leading-relaxed">非 Anthropic 模型默认使用 DuckDuckGo，让 GPT-4o、DeepSeek、Gemini、Ollama 开箱即用。</p>
+      </div>
+
+      <div class="lg:col-span-2 grid sm:grid-cols-2 gap-5 reveal">
+        <div class="p-6 rounded-2xl bg-white border border-neutral-200">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-xs font-semibold">免费</span>
+            <h4 class="font-semibold">DuckDuckGo 默认</h4>
+          </div>
+          <p class="text-sm text-neutral-600">开箱即用的网页搜索回退方案，可能受速率限制影响。</p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-white border border-neutral-200">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="px-2 py-0.5 rounded-md bg-orange-100 text-orange-700 text-xs font-semibold">推荐</span>
+            <h4 class="font-semibold">Firecrawl 增强</h4>
+          </div>
+          <p class="text-sm text-neutral-600 mb-3">免费版包含 500 积分，正确处理 JS 渲染页面。</p>
+          <div class="code-window rounded-lg overflow-hidden">
+            <pre class="p-3 text-xs"><code><span class="tok-key">export</span> <span class="tok-var">FIRECRAWL_API_KEY</span>=<span class="tok-str">your-key</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== SPONSORS ========== -->
+<section class="py-24 bg-white border-t border-neutral-100">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="text-center reveal">
+      <span class="text-sm font-semibold text-brand-600 uppercase tracking-wider">赞助商</span>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">感谢支持的伙伴</h2>
+    </div>
+
+    <div class="mt-12 flex flex-wrap items-center justify-center gap-8 sm:gap-16 reveal">
+      <a href="https://gitlawb.com" target="_blank" rel="noopener" class="group flex flex-col items-center gap-3 transition hover:scale-105">
+        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-50 to-brand-100 border border-brand-200 flex items-center justify-center text-2xl font-bold text-brand-700 shadow-sm group-hover:shadow-md transition">G</div>
+        <span class="font-semibold text-neutral-700 group-hover:text-neutral-900">GitLawb</span>
+      </a>
+      <a href="https://bankr.bot" target="_blank" rel="noopener" class="group flex flex-col items-center gap-3 transition hover:scale-105">
+        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 flex items-center justify-center text-2xl font-bold text-purple-700 shadow-sm group-hover:shadow-md transition">B</div>
+        <span class="font-semibold text-neutral-700 group-hover:text-neutral-900">Bankr.bot</span>
+      </a>
+      <a href="https://atomic.chat/" target="_blank" rel="noopener" class="group flex flex-col items-center gap-3 transition hover:scale-105">
+        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-50 to-pink-100 border border-pink-200 flex items-center justify-center text-2xl font-bold text-pink-700 shadow-sm group-hover:shadow-md transition">A</div>
+        <span class="font-semibold text-neutral-700 group-hover:text-neutral-900">Atomic Chat</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ========== COMMUNITY / CTA ========== -->
+<section id="community" class="py-24 lg:py-32 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 text-white relative overflow-hidden">
+  <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-gradient-to-br from-brand-500/20 via-purple-500/10 to-transparent rounded-full blur-3xl"></div>
+  <div class="relative max-w-5xl mx-auto px-6 lg:px-8 text-center">
+    <h2 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight reveal">
+      准备好<span class="gradient-text">解放生产力</span>了吗？
+    </h2>
+    <p class="mt-6 text-lg text-neutral-400 max-w-2xl mx-auto reveal">
+      加入 OpenClaude 社区，与开发者一起塑造下一代多提供商编程智能体。
+    </p>
+
+    <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 reveal">
+      <a href="https://github.com/Gitlawb/openclaude" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white text-neutral-900 font-semibold hover:bg-neutral-100 transition shadow-lg">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.27-1.69-1.27-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.96 10.96 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.68.8.56C20.71 21.39 24 17.08 24 12c0-6.35-5.15-11.5-11.5-11.5z"/></svg>
+        Star on GitHub
+      </a>
+      <a href="https://github.com/Gitlawb/openclaude/discussions" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white/10 border border-white/20 text-white font-semibold hover:bg-white/15 transition backdrop-blur">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        加入讨论
+      </a>
+    </div>
+
+    <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 reveal">
+      <a href="https://github.com/Gitlawb/openclaude/discussions" target="_blank" rel="noopener" class="p-5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-left group">
+        <div class="text-2xl mb-2">💬</div>
+        <h4 class="font-semibold text-white">Discussions</h4>
+        <p class="text-xs text-neutral-400 mt-1">问答与社区交流</p>
+      </a>
+      <a href="https://github.com/Gitlawb/openclaude/issues" target="_blank" rel="noopener" class="p-5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-left group">
+        <div class="text-2xl mb-2">🐛</div>
+        <h4 class="font-semibold text-white">Issues</h4>
+        <p class="text-xs text-neutral-400 mt-1">报告 bug 与功能需求</p>
+      </a>
+      <a href="https://github.com/Gitlawb/openclaude/blob/main/SECURITY.md" target="_blank" rel="noopener" class="p-5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-left group">
+        <div class="text-2xl mb-2">🔒</div>
+        <h4 class="font-semibold text-white">Security</h4>
+        <p class="text-xs text-neutral-400 mt-1">安全策略与披露</p>
+      </a>
+      <a href="https://github.com/Gitlawb/openclaude/blob/main/vscode-extension/openclaude-vscode" target="_blank" rel="noopener" class="p-5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-left group">
+        <div class="text-2xl mb-2">🧩</div>
+        <h4 class="font-semibold text-white">VS Code 扩展</h4>
+        <p class="text-xs text-neutral-400 mt-1">编辑器集成</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ========== FOOTER ========== -->
+<footer class="bg-neutral-950 text-neutral-400 border-t border-white/5">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8 py-12">
+    <div class="grid md:grid-cols-4 gap-8 mb-10">
+      <div class="md:col-span-1">
+        <div class="flex items-center gap-2.5 mb-4">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center">
+            <span class="text-white font-bold">⌘</span>
+          </div>
+          <span class="font-bold text-lg text-white">OpenClaude</span>
+        </div>
+        <p class="text-sm leading-relaxed">面向云端和本地模型的开源编程智能体 CLI。</p>
+      </div>
+      <div>
+        <h4 class="font-semibold text-white mb-3 text-sm">文档</h4>
+        <ul class="space-y-2 text-sm">
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/docs/non-technical-setup.md" target="_blank" rel="noopener" class="hover:text-white transition">非技术用户安装</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/docs/quick-start-windows.md" target="_blank" rel="noopener" class="hover:text-white transition">Windows 快速开始</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/docs/quick-start-mac-linux.md" target="_blank" rel="noopener" class="hover:text-white transition">macOS / Linux</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/docs/advanced-setup.md" target="_blank" rel="noopener" class="hover:text-white transition">高级安装</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/ANDROID_INSTALL.md" target="_blank" rel="noopener" class="hover:text-white transition">Android 安装</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-semibold text-white mb-3 text-sm">资源</h4>
+        <ul class="space-y-2 text-sm">
+          <li><a href="https://github.com/Gitlawb/openclaude" target="_blank" rel="noopener" class="hover:text-white transition">GitHub 仓库</a></li>
+          <li><a href="https://gitlawb.com/node/repos/z6MkqDnb/openclaude" target="_blank" rel="noopener" class="hover:text-white transition">GitLawb 镜像</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/tags" target="_blank" rel="noopener" class="hover:text-white transition">发布版本</a></li>
+          <li><a href="https://firecrawl.dev" target="_blank" rel="noopener" class="hover:text-white transition">Firecrawl</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-semibold text-white mb-3 text-sm">社区</h4>
+        <ul class="space-y-2 text-sm">
+          <li><a href="https://github.com/Gitlawb/openclaude/discussions" target="_blank" rel="noopener" class="hover:text-white transition">Discussions</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/issues" target="_blank" rel="noopener" class="hover:text-white transition">Issues</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/SECURITY.md" target="_blank" rel="noopener" class="hover:text-white transition">安全策略</a></li>
+          <li><a href="https://github.com/Gitlawb/openclaude/blob/main/LICENSE" target="_blank" rel="noopener" class="hover:text-white transition">MIT License</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
+      <p>© 2026 OpenClaude. 独立社区项目，与 Anthropic 无关联。</p>
+      <p class="text-neutral-500">"Claude" 与 "Claude Code" 是 Anthropic PBC 的商标。</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Copy buttons
+  function copyText(btn, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const label = btn.querySelector('.copy-label');
+      const original = label.textContent;
+      btn.classList.add('copied');
+      label.textContent = '已复制 ✓';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        label.textContent = original;
+      }, 1600);
+    });
+  }
+
+  // Reveal on scroll
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

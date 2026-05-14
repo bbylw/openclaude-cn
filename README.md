@@ -361,3 +361,7 @@ OpenClaude 源自 Claude Code 代码库，此后经过大量修改以支持多�
 ## 许可证
 
 详见 [LICENSE](https://github.com/Gitlawb/openclaude/blob/main/LICENSE)。
+
+---
+
+> 汉化自 https://github.com/Gitlawb/openclaude
